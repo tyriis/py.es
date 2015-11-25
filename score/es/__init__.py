@@ -25,6 +25,7 @@
 # Licensee has his registered seat, an establishment or assets.
 
 from elasticsearch import Elasticsearch
+from elasticsearch.exceptions import NotFoundError
 from score.init import ConfiguredModule, parse_list, parse_bool, extract_conf
 from sqlalchemy import event
 import inspect
@@ -166,10 +167,13 @@ class ConfiguredEsModule(ConfiguredModule):
         Removes an *object_* from the index.
         """
         es_cls = self.get_es_class(object_)
-        self.es.delete(
-            index=self.index,
-            doc_type=es_cls.__score_db__['type_name'],
-            id=object_.id)
+        try:
+            self.es.delete(
+                index=self.index,
+                doc_type=es_cls.__score_db__['type_name'],
+                id=object_.id)
+        except NotFoundError:
+            pass
 
     def query(self, class_, query, *,
               analyze_wildcard=False, offset=0, limit=10):
