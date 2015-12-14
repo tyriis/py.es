@@ -134,7 +134,6 @@ class ConfiguredEsModule(ConfiguredModule):
         """
         cls = object_.__class__
         body = {
-            '_id': object_.id,
             'class': [],
             'concrete_class': cls.__score_db__['type_name'],
         }
