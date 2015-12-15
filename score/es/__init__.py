@@ -24,12 +24,16 @@
 # the discretion of STRG.AT GmbH also the competent court, in whose district the
 # Licensee has his registered seat, an establishment or assets.
 
-from elasticsearch import Elasticsearch
+from elasticsearch import Elasticsearch, helpers
 from elasticsearch.exceptions import NotFoundError
 from score.init import ConfiguredModule, parse_list, parse_bool, extract_conf
 from sqlalchemy import event
+from time import time
 import inspect
+import logging
 
+
+log = logging.getLogger(__name__)
 
 defaults = {
     'ctx.member': 'es',
@@ -127,39 +131,76 @@ class ConfiguredEsModule(ConfiguredModule):
         self.db_conf = db_conf
         self.es = es
         self.index = index
+        self._converters = {}
 
     def insert(self, object_):
         """
         Inserts an *object_* into the index.
         """
+        body = self._object2json(object_)
+        self.es.index(
+            index=self.index,
+            doc_type=body['_type'],
+            body=body,
+            id=object_.id)
+
+    def _object2json(self, object_):
+        """
+        Converts given *object_* to the JSON representation required for
+        indexing.
+        """
         cls = object_.__class__
-        body = {
+        if cls not in self._converters:
+            self._converters[cls] = self._mkconverter(cls)
+        return self._converters[cls](object_)
+
+    def _mkconverter(self, cls):
+        """
+        Generates a function for efficiently converting an object of given class
+        *cls* to its json representation as returned by :meth:`._object2json`.
+        """
+        es_cls = self.get_es_class(cls)
+        bodytpl = {
             'class': [],
             'concrete_class': cls.__score_db__['type_name'],
+            '_type': es_cls.__score_db__['type_name'],
         }
-        es_cls = self.get_es_class(object_)
+        getters = {}
         while cls:
-            body['class'].append(cls.__score_db__['type_name'])
+            bodytpl['class'].append(cls.__score_db__['type_name'])
             if hasattr(cls, '__score_es__'):
                 for member in cls.__score_es__:
-                    if member in body:
+                    if member in bodytpl:
                         continue
-                    value = getattr(object_, member)
+                    converter = None
                     if '__convert__' in cls.__score_es__[member]:
-                        convert = cls.__score_es__[member]['__convert__']
-                        if len(inspect.getargspec(convert).args) == 2:
-                            value = convert(value, object_)
-                        else:
-                            value = convert(value)
-                    body[member] = value
+                        converter = cls.__score_es__[member]['__convert__']
+                    getters[member] = self.__mkmembergetter(member, converter)
             if cls == es_cls:
                 break
             cls = cls.__score_db__['parent']
-        self.es.index(
-            index=self.index,
-            doc_type=es_cls.__score_db__['type_name'],
-            body=body,
-            id=object_.id)
+
+        def converter(object_):
+            body = bodytpl.copy()
+            for member, getter in getters.items():
+                body[member] = getter(object_)
+            return body
+        return converter
+
+    def __mkmembergetter(self, member, converter=None):
+        """
+        Helper function for _mkconverter: Will return a function that retrieves
+        a member value and optionally converts it with given converter.
+        """
+        if converter is None:
+            return lambda object_: getattr(object_, member)
+        if len(inspect.getargspec(converter).args) == 2:
+            def getter(object_):
+                return converter(getattr(object_, member), object_)
+        else:
+            def getter(object_):
+                return converter(getattr(object_, member))
+        return getter
 
     def delete(self, object_):
         """
@@ -257,12 +298,18 @@ class ConfiguredEsModule(ConfiguredModule):
         Re-inserts every object into the lucene index. Note that this operation
         might take a very long time, depending on the number of objects.
         """
-        session = self.db_conf.Session()
-        for cls in self.classes():
-            for obj in session.query(cls).yield_per(100):
-                # TODO: use bulk() instead?
-                # http://elasticsearch-py.readthedocs.org/en/master/helpers.html#elasticsearch.helpers.streaming_bulk
-                self.insert(obj)
+        def generator():
+            session = self.db_conf.Session()
+            for cls in self.classes():
+                start = time()
+                log.debug('indexing %s' % cls)
+                for obj in session.query(cls).yield_per(100):
+                    body = self._object2json(obj)
+                    body['_id'] = obj.id
+                    body['_index'] = self.index
+                    yield body
+                log.debug('indexed %s in %fs' % (cls, time() - start))
+        helpers.bulk(self.es, generator())
 
     def destroy(self):
         """
