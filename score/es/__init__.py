@@ -138,9 +138,12 @@ class ConfiguredEsModule(ConfiguredModule):
         Inserts an *object_* into the index.
         """
         body = self._object2json(object_)
+        doc_type = body['_type']
+        del body['_id']
+        del body['_type']
         self.es.index(
             index=self.index,
-            doc_type=body['_type'],
+            doc_type=doc_type,
             body=body,
             id=object_.id)
 
@@ -182,6 +185,7 @@ class ConfiguredEsModule(ConfiguredModule):
 
         def converter(object_):
             body = bodytpl.copy()
+            body['_id'] = object_.id
             for member, getter in getters.items():
                 body[member] = getter(object_)
             return body
@@ -305,7 +309,6 @@ class ConfiguredEsModule(ConfiguredModule):
                 log.debug('indexing %s' % cls)
                 for obj in session.query(cls).yield_per(100):
                     body = self._object2json(obj)
-                    body['_id'] = obj.id
                     body['_index'] = self.index
                     yield body
                 log.debug('indexed %s in %fs' % (cls, time() - start))
