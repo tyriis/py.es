@@ -14,7 +14,7 @@ setup(
     author_email='score@strg.at',
     url='http://score-framework.org',
     keywords='score framework elasticsearch',
-    packages=['score.es'],
+    packages=['score', 'score.es'],
     namespace_packages=['score'],
     zip_safe=False,
     license='LGPL',
@@ -34,6 +34,7 @@ setup(
         'Topic :: Software Development :: Libraries :: Application Frameworks',
     ],
     install_requires=[
+        'score.init >= 0.3',
         'elasticsearch >= 1.0, < 2.0',
     ]
 )
