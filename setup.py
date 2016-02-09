@@ -7,7 +7,7 @@ with open(os.path.join(here, 'README.rst')) as f:
 
 setup(
     name='score.es',
-    version='0.2.1',
+    version='0.2.2',
     description='ElasticSearch integration for The SCORE Framework',
     long_description=README,
     author='strg.at',
