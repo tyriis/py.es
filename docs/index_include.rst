@@ -148,10 +148,3 @@ Configuration
     .. automethod:: score.es.ConfiguredEsModule.classes
 
     .. automethod:: score.es.ConfiguredEsModule.get_es_class
-
-Pyramid Integration
-===================
-
-.. automodule:: score.es.pyramid
-    :members:
-
