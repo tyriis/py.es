@@ -225,38 +225,55 @@ class ConfiguredEsModule(ConfiguredModule):
               analyze_wildcard=False, offset=0, limit=10):
         """
         Executes a lucene *query* on the index and yields a list of objects of
-        given *class_*, retrieved from the database. The *query* can be
-        provided as a string, or as a `query DSL`_. The parameter
-        *analyze_wildcard* wildcard is passed to
-        :meth:`elasticsearch.Elasticsearch.search`, whereas *offset* and
-        *limit* are mapped to *from_* and *size* respectively.
+        given *class_*, retrieved from the database. It is also possible to
+        provide multiple classes, in which case the same query will be performed
+        on `multiple types at once`_.
+
+        The *query* can be provided as a string, or as a `query DSL`_. The
+        parameter *analyze_wildcard* wildcard is passed to
+        :meth:`elasticsearch.Elasticsearch.search`, whereas *offset* and *limit*
+        are mapped to *from_* and *size* respectively.
 
         .. _query DSL: http://www.elastic.co/guide/en/elasticsearch/reference/current/query-dsl.html
+        .. _multiple types at once: https://www.elastic.co/guide/en/elasticsearch/guide/master/multi-index-multi-type.html
         """
-        es_cls = self.get_es_class(class_)
+        if isinstance(class_, type):
+            classes = [class_]
+        else:
+            classes = class_
+        doctypes = []
+        doctype2class = {}
+        for class_ in classes:
+            typename = self.get_es_class(class_).__score_db__['type_name']
+            doctype2class[typename] = class_
+            doctypes.append(typename)
         kwargs = {
             'index': self.index,
             'analyze_wildcard': analyze_wildcard,
             'fields': '_id',
-            'doc_type': es_cls.__score_db__['type_name'],
+            'doc_type': ','.join(doctypes),
             'from_': offset,
             'size': limit,
         }
         if isinstance(query, str):
-            kwargs['q'] = '((%s) AND class:%s)' % (
-                query, class_.__score_db__['type_name'])
+            kwargs['q'] = query
         else:
-            kwargs['body'] = {'query': {
-                'filtered': {
-                    'query': query,
-                    'filter': {
-                        'term': {'class': class_.__score_db__['type_name']}
-                    }
-                }
-            }}
+            kwargs['body'] = query
+        # TODO: use the session of a ctx object instead of creating a new
+        #   session here!
+        session = self.db.Session()
         result = self.es.search(**kwargs)
-        ids = [int(hit['_id']) for hit in result['hits']['hits']]
-        yield from self.db.Session().by_ids(class_, ids)
+        current_class = None
+        ids = []
+        for hit in result['hits']['hits']:
+            class_ = doctype2class[hit['_type']]
+            if class_ != current_class:
+                if current_class:
+                    yield from session.by_ids(current_class, ids)
+                current_class = class_
+                ids = []
+            ids.append(int(hit['_id']))
+        yield from session.by_ids(current_class, ids)
 
     def get_es_class(self, object_):
         """
