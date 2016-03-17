@@ -258,7 +258,7 @@ class ConfiguredEsModule(ConfiguredModule):
         if isinstance(query, str):
             kwargs['q'] = query
         else:
-            kwargs['body'] = query
+            kwargs['body'] = {'query': query}
         # TODO: use the session of a ctx object instead of creating a new
         #   session here!
         session = self.db.Session()
