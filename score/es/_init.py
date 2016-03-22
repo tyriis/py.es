@@ -31,6 +31,7 @@ from sqlalchemy import event
 from time import time
 import inspect
 import logging
+from functools import partial
 
 
 log = logging.getLogger(__name__)
@@ -77,8 +78,6 @@ def init(confdict, db, ctx=None):
     if 'index' not in confdict:
         confdict['index'] = 'score'
     es_conf = ConfiguredEsModule(db, es, confdict['index'])
-    insert = ConfiguredEsModule.insert
-    delete = ConfiguredEsModule.delete
     to_insert = []
     to_delete = []
 
@@ -115,11 +114,11 @@ def init(confdict, db, ctx=None):
     @event.listens_for(db.Session, 'after_flush')
     def after_flush(session, flush_context):
         for obj in to_insert:
-            insert(es_conf, obj)
+            es_conf.insert(obj)
         for obj in to_delete:
-            delete(es_conf, obj)
+            es_conf.delete(obj)
     if ctx and conf['ctx.member'] not in (None, 'None'):
-        ctx.register(conf['ctx.member'], lambda ctx: es_conf)
+        ctx.register(conf['ctx.member'], lambda ctx: CtxProxy(es_conf, ctx))
     return es_conf
 
 
@@ -221,7 +220,7 @@ class ConfiguredEsModule(ConfiguredModule):
         except NotFoundError:
             pass
 
-    def query(self, class_, query, *,
+    def query(self, ctx, class_, query, *,
               analyze_wildcard=False, offset=0, limit=10):
         """
         Executes a lucene *query* on the index and yields a list of objects of
@@ -259,9 +258,7 @@ class ConfiguredEsModule(ConfiguredModule):
             kwargs['q'] = query
         else:
             kwargs['body'] = {'query': query}
-        # TODO: use the session of a ctx object instead of creating a new
-        #   session here!
-        session = self.db.Session()
+        session = getattr(ctx, self.db.ctx_member)
         result = self.es.search(**kwargs)
         current_class = None
         ids = []
@@ -317,13 +314,13 @@ class ConfiguredEsModule(ConfiguredModule):
         recurse(self.db.Base)
         return self._classes
 
-    def refresh(self):
+    def refresh(self, ctx):
         """
         Re-inserts every object into the lucene index. Note that this operation
         might take a very long time, depending on the number of objects.
         """
         def generator():
-            session = self.db.Session()
+            session = getattr(ctx, self.db.ctx_member)
             for cls in self.classes():
                 start = time()
                 log.debug('indexing %s' % cls)
@@ -377,3 +374,30 @@ class ConfiguredEsModule(ConfiguredModule):
                 index=self.index,
                 doc_type=key,
                 body=mapping)
+
+
+class CtxProxy:
+    """
+    Wrapper for the ConfiguredEsModule, which stores a reference to a context
+    object and passes that object transparently to the functions requiring a
+    context. This avoids duplicating the *ctx* parameter when accessing the
+    configuration through the context object itself. In other words: you won't
+    need to do the following when using this class:
+
+    >>> ctx.es.query(ctx, User, ...
+
+    You can instead omit the second context object:
+
+    >>> ctx.es.query(User, ...
+
+    """
+
+    def __init__(self, conf, ctx):
+        self._conf = conf
+        self._ctx = ctx
+
+    def __getattr__(self, attr):
+        result = getattr(self._conf, attr)
+        if attr in ('query', 'refresh'):
+            result = partial(result, self._ctx)
+        return result

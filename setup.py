@@ -35,7 +35,7 @@ setup(
     ],
     install_requires=[
         'score.init >= 0.3',
-        'score.db >= 0.5',
+        'score.db >= 0.5.6',
         'elasticsearch >= 1.0, < 2.0',
     ]
 )
