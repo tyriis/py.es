@@ -54,10 +54,10 @@ def init(confdict, db, ctx=None):
         Any other arguments to be passed to the :class:`Elasticsearch
         <elasticsearch.Elasticsearch>` constructor.
 
-    :confkey:`index` :default:`score`
+    :confkey:`index` :confdefault:`score`
         The index to use in all operations.
 
-    :confkey:`ctx.member` :default:`es`
+    :confkey:`ctx.member` :confdefault:`es`
         The name of the :term:`context member`, that should be registered with
         the configured :mod:`score.ctx` module (if there is one). The default
         value allows one to conveniently query the index:

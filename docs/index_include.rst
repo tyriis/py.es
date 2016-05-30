@@ -1,6 +1,6 @@
 .. module:: score.es
-.. role:: faint
 .. role:: confkey
+.. role:: confdefault
 
 ********
 score.es
@@ -11,24 +11,14 @@ elasticsearch index and a convenient access, that integrates seamlessly with
 the :mod:`score.db` module.
 
 
-.. _es_indexing:
-
-Automatic Indexing
-==================
+Quickstart
+==========
 
 The module will automatically detect classes with the special member
 ``__score_es__``. This dictionary must contain a mapping of real member names
-to an elasticsearch mapping definition.
-
-.. note::
-    Before this feature can unleash its full potential, the index needs to be
-    initialized via :meth:`conf.create <score.es.ConfiguredEsModule.create>`.
-
-An example class might look like this:
+to an elasticsearch mapping definition:
 
 .. code-block:: python
-
-    from sqlalchemy import Column, String, Integer, ForeignKey
 
     class User(Base):
         __score_es__ = {
@@ -47,27 +37,29 @@ An example class might look like this:
     class SillyText(Text):
         pass
 
-It is also possible to provide a conversion function for member values. The
-function may accept either one or two parameters. The first value is always the
-value to convert, whereas the second value will be the object instance:
+Create your elasticsearch index automatically after updating all models:
 
-.. code-block:: python
+>>> score.es.create()
 
-    class L33tText(SillyText):
-        __score_es__ = {
-            'body': {'type': 'string', 'term_vector': 'with_offsets',
-                     '__convert__': lambda b: b.replace('e', '3')},
-        }
+You can now use the :term:`context member` *es* to query your index:
 
-    class VeryShortText(SillyText):
-        __score_es__ = {
-            'body': {'type': 'string', 'term_vector': 'with_offsets',
-                     '__convert__': lambda b, text: text.title},
-        }
+>>> for text in ctx.es.query(Text, 'title:dead AND title:parrot'):
+...     print('{text.id}: {text.title}'.format(text=text))
 
-Whenever objects of this class are stored in the configured database, they are
-also automatically added to the configured elasticsearch index. The following
-document properties will be added automatically:
+Configuration
+=============
+
+.. autofunction:: score.es.init
+
+Details
+=======
+
+Automatic Fields
+----------------
+
+Whenever objects of managed classes are stored in the configured database, they
+are also automatically added to the configured elasticsearch index. The
+following document properties will be added automatically:
 
 - ``_id``: This is equal to the id of the object in the database
 - ``_type``: Equal to the name of the :term:`top-most es class`, i.e. ``text``.
@@ -90,33 +82,29 @@ elasticsearch's default behaviour automatically apply to all mappings:
 .. _store: http://www.elastic.co/guide/en/elasticsearch/reference/current/mapping-core-types.html#string
 
 
-.. _es_querying:
+Conversion
+----------
 
-Querying
-========
-
-The easiest way to query for objects is using the module's :meth:`query`
-method. It will accept an elasticsearch query and yield a list of objects:
-
-.. code-block:: python
-
-    for text in esconf.query(Text, 'title:dead AND title:parrot'):
-        print('{text.id}: {text.title}'.format(text=text))
-
-It is also possible to access the index directly, via :attr:`esconf.es
-<score.es.ConfiguredEsModule.es>`, in which case it is important to also use
-the configured index name:
+It is possible to provide a conversion function for member values. The
+function may accept either one or two parameters. The first value is always the
+value to convert, whereas the second value will be the object instance:
 
 .. code-block:: python
 
-    result = esconf.es.search(index=esconf.index,
-                              q='title:"How not to be seen"',
-                              doc_type='text')
-    assert len(result['hits']['hits']) == 0
+    class L33tText(SillyText):
+        __score_es__ = {
+            'body': {'type': 'string', 'term_vector': 'with_offsets',
+                     '__convert__': lambda b: b.replace('e', '3')},
+        }
 
+    class VeryShortText(SillyText):
+        __score_es__ = {
+            'body': {'type': 'string', 'term_vector': 'with_offsets',
+                     '__convert__': lambda b, text: text.title},
+        }
 
-Configuration
-=============
+API
+===
 
 .. autofunction:: score.es.init
 
