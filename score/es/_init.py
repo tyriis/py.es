@@ -337,7 +337,7 @@ class ConfiguredEsModule(ConfiguredModule):
         """
         self.es.indices.delete(index=self.index, ignore=404)
 
-    def create(self, destroy=True):
+    def create(self, destroy=True, _source={'enabled': False}):
         """
         Creates the elasticsearch index and registers all mappings. If the
         parameter *destroy* is left at its default value, the index will be
@@ -353,7 +353,7 @@ class ConfiguredEsModule(ConfiguredModule):
             key = cls.__score_db__['type_name']
             mapping = {}
             mapping[key] = {'properties': {}}
-            mapping[key]['_source'] = {'enabled': False}
+            mapping[key]['_source'] = _source
 
             def recurse(cls):
                 if hasattr(cls, '__score_es__'):
